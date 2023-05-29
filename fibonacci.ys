@@ -1,0 +1,409 @@
+# Fibonacci
+
+.pos 0
+   irmovq $0x700,%r11 #muistipaikka 0x700
+   irmovq $3,%r12 # 3
+   rmmovq %r12,(%r11)
+   irmovq $5,%r12 # 5
+   rmmovq %r12,8(%r11)
+   irmovq $8,%r12 # 8
+   rmmovq %r12,16(%r11)
+   irmovq $0,%r12 # loppunolla
+   rmmovq %r12,24(%r11)
+
+main:
+	irmovq $0x700,%rsp #pino alkaa 0x700 muistipaikasta
+	irmovq $0x700,%rbp
+	#pino ei kuitenkaan ylikirjoita lukujonoa, koska pino kasvaa alaspäin ja ensimmäinen elementti tulee 0x6f8 muistipaikkaan
+	call checkArray
+	halt
+
+checkArray:
+	irmovq $0x700,%r10
+test_c:
+	mrmovq (%r10),%rdi
+	andq %rdi,%rdi
+	jne loop_c
+	xorq %rax,%rax #taulukosta luettiin 0, eli palautetaan 0 rax rekisterissä
+	ret
+loop_c:
+	pushq %rdi
+	call isFibonacci
+	popq %rdi
+	irmovq $8,%r8
+	addq %r8,%r10 #r10 osoittaa nyt seuraavaan taulukon elementtiin
+	andq %rax,%rax
+	jne test_c #jos isFibonacci palautti 1 jatketaan looppaamista
+	rrmovq %rdi,%rax #isFibonacci palautti 0 eli siirretään luku rax rekisteriin ja lopetetaan funktio
+	ret
+
+# input: rdi = numero
+# return: rax = 1 jos rdi on toisen kokonaisluvun neliö, muuten rax = 0
+# käyttää rekisterejä: r8, rdi, rsi, rcx, rax, rdx
+isPerfectSquare:
+	rrmovq %rdi,%r12
+	pushq %rdi #sqrt käyttää rdi rekisteriä joten laitetaan se pinoon
+	call sqrt #antaa vastauksen rcx rekisteriin
+	rrmovq %rcx,%r11
+	rrmovq %rcx,%r12
+	call multiply #antaa vastauksen rax rekisteriin
+	popq %rdi #rdi takaisin pinosta
+	subq %rdi,%rax
+	je test_ips #cmove ja cmovne eivät tue vakioita joten tehdään hyppykäskyllä
+	
+	irmovq $0,%rax
+	ret
+test_ips:
+	irmovq $1,%rax
+	ret
+
+# input: rdi = numero
+# return: rax = 1 jos rdi on Fibonaccin luku, muuten rax = 0
+# käyttää rekisterejä: r8, r9, rdi, rsi, rcx, rax, rdx
+isFibonacci:
+	pushq %rdi #alkuperäinen numero pinoon
+	irmovq $5,%r11
+	rrmovq %rdi,%r12
+	call multiply
+	rrmovq %rax,%r11
+	popq %r12 #alkuperäinen numero pinosta
+	call multiply
+	pushq %rax # 5*x*x pinoon
+	irmovq $4,%r8
+	addq %r8, %rax #rax = 5*x*x + 4
+	rrmovq %rax,%rdi
+	call isPerfectSquare
+	andq %rax,%rax
+	je test2_f #jos isPerfectSquare tulos oli 0 testataan 5*x*x - 4
+	popq %r8 #tyhjennetään pino
+	ret
+test2_f:
+	irmovq $4,%r8
+	popq %rdi #5*x*x pinosta
+	subq %r8,%rdi #5*x*x - 4
+	call isPerfectSquare
+	ret
+
+# input: r11 = kertoja
+# input: r12 = kerrottava
+# return: rax
+# käyttää rekisterejä: r8, r9, rbx, rdx, rdi, rsi, rcx
+multiply:
+	irmovq $63,%rcx #loopataan 64 kertaa
+	#irmovq 64bit_bitmask,%r9
+	irmovq $0x0bf8,%r9 #muistiosoite 64 bit numerolle jossa MSB on 1
+	#ykkösen right ja left shiftaaminen näin ei vaadi niin paljon käskyjä
+	xorq %rdx,%rdx
+	rrmovq %r12,%r8
+	subq %r11,%r8
+	jl if_swap_m #kertojan paikalle laitetaan pienempi luku
+back_swap_m:
+	irmovq 0xff, %r8
+	subq %r11,%r8
+	jge max8_m
+	irmovq 0xffff, %r8
+	subq %r11,%r8
+	jge max16_m
+	irmovq 0xffffffff, %r8
+	subq %r11,%r8
+	jge max32_m
+	jmp test_m1
+max8_m:
+	irmovq $7,%rcx #jos luku on max 0xff niin riittää loopata 8 kertaa
+	#irmovq 8bit_bitmask,%r9
+	irmovq $0x0a38,%r9 #muistiosoite 8 bit numerolle jossa MSB on 1
+	jmp test_m1
+max16_m:
+	irmovq $15,%rcx #jos luku on max 0xffff niin riittää loopata 16 kertaa
+	#irmovq 16bit_bitmask,%r9
+	irmovq $0x0a78,%r9 #muistiosoite 16 bit numerolle jossa MSB on 1
+	jmp test_m1
+max32_m:
+	irmovq $31,%rcx #jos luku on max 0xffffffff niin riittää loopata 32 kertaa
+	#irmovq 32bit_bitmask,%r9
+	irmovq $0x0af8,%r9 #muistiosoite 32 bit numerolle jossa MSB on 1
+test_m1:
+	mrmovq (%r9),%rax
+	andq %r11,%rax #rax rekisterissä on bitti jota on leftshiftattu rcx verran
+	jne not_zero_m
+loop_m1:
+	irmovq $8,%r8
+	subq %r8,%r9 #r9 osoittaa nyt seuraavaan bitmaskiin
+	irmovq $1,%r8
+	subq %r8,%rcx
+	jge test_m1 #jos rcx on 0 tai suurempi niin jatketaan looppia
+	rrmovq %rdx,%rax #return arvo rax tekisteriin
+	ret
+not_zero_m:
+	rrmovq %r12,%rdi
+	rrmovq %rcx,%rsi
+	pushq %rcx #leftshift käyttää rcx rekisteriä
+	pushq %r9 #leftshift käyttää r9 rekisteriä
+	call leftshift
+	popq %r9
+	popq %rcx
+	addq %rax,%rdx #kerrottavaa leftshiftataan rcx verran ja lisätään se rdx rekisteriin
+	jmp loop_m1
+if_swap_m:
+	rrmovq %r11,%r8
+	rrmovq %r12,%r11
+	rrmovq %r8,%r12
+	jmp back_swap_m
+
+# input: r12 = numero minkä neliöjuuri etsitään
+# return: rcx
+# käyttää rekisterejä: r8, rdi, rsi, rax, rdx
+sqrt:
+	irmovq $0x0bf0,%rax #rax on muistiosoite 1 << 62 numeroon
+	#ykkösen right ja left shiftaaminen näin ei vaadi niin paljon käskyjä
+	irmovq $16,%r8
+	jmp test_s1
+loop_s1:
+	subq %r8,%rax #rax osoittaa nyt numeroon *rax >> 2
+test_s1:
+	mrmovq (%rax),%rbx
+	subq %r12,%rbx
+	jg loop_s1 #jatketaan looppia jos rax:n osoittaman numero on suurempi kuin numero minkä neliöjuuri etsitään
+	xorq %rcx,%rcx #rcx = 0
+	jmp test_s2
+loop_s2:
+	rrmovq %rcx,%rdx
+	addq %r8,%rdx #rdx = rcx + *rax
+	rrmovq %rdx,%rbx
+	subq %r12,%rdx
+	jg else_s2
+	
+	subq %rbx,%r12
+	rrmovq %rcx,%rdi
+	irmovq $1,%rsi
+	pushq %rax
+	call rightshift
+	rrmovq %rax,%rcx
+	popq %rax
+	mrmovq (%rax),%r8 #rightshift käyttää r8 rekisteriä joten otetaan se uudestaan rax osoittamasta osoitteesta
+	addq %r8,%rcx #rcx = rcx + *rax
+	jmp skip_else_s2
+else_s2:
+	rrmovq %rcx,%rdi
+	irmovq $1,%rsi
+	pushq %rax
+	call rightshift
+	rrmovq %rax,%rcx
+	popq %rax
+skip_else_s2:
+	irmovq $16,%r8
+	subq %r8,%rax #rax osoittaa nyt numeroon *rax >> 2
+test_s2:
+	mrmovq (%rax),%r8 #r8 = *rax
+	andq %r8,%r8
+	jne loop_s2 #jatketaan looppia jos *rax ei ole 0
+	ret
+
+# input: rdi = jaettava
+# input: rsi = jakaja
+# return: rax = tulos rcx = jakojäännös
+# käyttää rekisterejä: r8, rbx
+divide:
+	irmovq $1,%r8
+	xorq %rax,%rax
+	xorq %rbx,%rbx
+	jmp test_d
+loop_d:
+	addq %r8,%rax
+test_d:
+	addq %rsi,%rbx
+	rrmovq %rdi,%rcx
+	subq %rbx,%rcx
+	jge loop_d
+	addq %rsi,%rcx
+	ret
+
+# input: rdi = numero mitä shiftataan
+# input: rsi = kuinka monta kertaa shiftataan
+# return: rax
+# käyttää rekisterejä: r8, r9, rbx, rcx
+leftshift:
+	rrmovq %rsi,%r8
+	irmovq $8,%r9
+	subq %r8,%r9
+	jg leftshift_loop #jos shiftataan vähemmän kun 8 bittiä hypätään leftshift_loop funktioon
+	pushq %rdi
+	rrmovq %rsi,%rdi
+	irmovq $8,%rsi
+	call divide #etsitään kuinka monta tavua voidaan shiftata
+	#rcx rekisterissä on jakojäännös ja siinä olevat bitit shiftataan yksitellen
+	popq %rdi
+	pushq %rax #shiftattavien tavujen määrä pinoon
+	rrmovq %rcx,%rsi
+	call leftshift_loop
+	popq %rdi #shiftattavien tajuven määrä nyt rdi rekisterissä
+	#rax rekisterissä on numero mitä shiftataan
+	irmovq $0,%r8
+	pushq %rax
+	pushq %r8
+	rrmovq %rsp, %r9
+	irmovq $8,%r8
+	addq %r8,%r9 #lisätään r9 8 jolloin se osoittaa alkuperäiseen numeroon
+	subq %rdi,%r9 #vähennetään rbxstä kuinka monta tavua shiftataan
+	mrmovq (%r9), %rax
+	irmovq $16,%r8
+	addq %r8,%rsp #tyhjennetään pino
+	ret
+
+# input: rdi = numero mitä shiftataan
+# input: rsi = kuinka monta kertaa shiftataan
+# return: rax
+# käyttää rekisterejä: r8
+leftshift_loop:
+	irmovq $1,%r8
+	rrmovq %rdi,%rax
+	jmp test_l
+loop_l:
+	addq %rax,%rax
+test_l:
+	subq %r8,%rsi
+	jge loop_l
+	ret
+
+# input: rdi = numero mitä shiftataan
+# input: rsi = kuinka monta kertaa shiftataan
+# return: rax
+# käyttää rekisterejä: r8, rbx, rcx
+rightshift:
+	pushq %rdi
+	rrmovq %rsi,%rdi
+	irmovq $8,%rsi
+	call divide #etsitään kuinka monta tavua voidaan shiftata
+	#nyt rax rekisterissä rightshiftattavien tavujen määrä
+	#rcx rekisterissä on jakojäännös
+	xorq %rbx,%rbx #rbx = 0
+	popq %rdi
+	andq %rcx,%rcx
+	je skip_leftshift_r #jos numero on kahdeksalla jaollinen left shiftausta ei tarvitse tehdä
+	irmovq $1,%r8
+	addq %r8,%rax #lisätään righshiftattaviin tavuihin yksi, koska ei shiftata 8 jaollisella numerolla
+	pushq %rax #rightshiftattavien tavujen määrä pinoon
+	irmovq $0,%r8
+	pushq %r8
+	pushq %rdi
+	mrmovq 7(%rsp),%rbx #MSB rbx rekisteriin koska se voi overflowaa leftshiftauksen takia
+	andq %rbx,%rbx
+	je msb_zero_r #jos MSB on tyhjä niin sille ei tarvitse tehdä mitään
+	rrmovq %rbx,%rdi
+	rrmovq %rcx,%rsi #right shiftataan MSB:tä jakojäännöksen verran
+	call rightshift_loop
+	rrmovq %rax,%rbx #righ shiftattu MSB rbx rekisteriin
+msb_zero_r:
+	popq %rdi #rdi takaisin
+	popq %r8 #0 pois pinosta
+	irmovq $8,%rsi
+	subq %rcx,%rsi #left shiftataan 8 - jakojäännös bitin verran
+	call leftshift_loop #sama kutsua leftshift_loop funktiota koska leftshitattavia bittejä vähemmän kuin 8
+	rrmovq %rax,%rdi #left shiftattu numero rdi rekisteriin
+	popq %rax #rax takaisin
+skip_leftshift_r:
+	pushq %rbx #rbx on 0 jos MSB oli 0, muuten siinä on right shiftattu MSB
+	pushq %rdi
+	rrmovq %rsp, %rbx
+	#rbx osoittaa nyt alkuperäiseen numeroon
+	addq %rax,%rbx #lisätään rbx kuinka monta tavua shiftataan
+	mrmovq (%rbx), %rax
+	irmovq $16,%r8
+	addq %r8,%rsp #tyhjennetään pino
+	ret
+
+# right shiftaa rekisterin LSB tavua
+# input: rdi = numero mitä shiftataan
+# input: rsi = kuinka monta kertaa shiftataan
+# return: rax
+# käyttää rekisterejä: r8, r9, rbx
+rightshift_loop:
+	irmovq $1,%r8
+	xorq %rax,%rax
+	irmovq $8,%rbx
+	subq %rsi,%rbx #rbx = 8 - kuinka monta kertaa shiftataan
+loop_r:
+	addq %rax,%rax # rax left shiftataan yhdellä
+	irmovq $0x80,%r9 #binäärissä 10000000
+	andq %rdi,%r9
+	je test_r #jos kahdeksas bitti on 0, rax:n LSB jää nollaksi
+	xorq %r8,%rax #rax rekisterin LSB asetetaan 1
+test_r:
+	addq %rdi,%rdi #rdi left shiftataan yhdellä
+	subq %r8,%rbx #loop counteria vähennetään yhdellä
+	jne loop_r
+	ret
+
+.pos 0x700
+array:
+
+.pos 0xa00
+.align 8
+.quad 1
+.quad 2
+.quad 4
+.quad 8
+.quad 16
+.quad 32
+.quad 64
+#8bit_bitmask:
+.quad 128
+.quad 256
+.quad 512
+.quad 1024
+.quad 2048
+.quad 4096
+.quad 8192
+.quad 16384
+#16bit_bitmask:
+.quad 32768
+.quad 65536
+.quad 131072
+.quad 262144
+.quad 524288
+.quad 1048576
+.quad 2097152
+.quad 4194304
+.quad 8388608
+.quad 16777216
+.quad 33554432
+.quad 67108864
+.quad 134217728
+.quad 268435456
+.quad 536870912
+.quad 1073741824
+#32bit_bitmask:
+.quad 2147483648
+.quad 4294967296
+.quad 8589934592
+.quad 17179869184
+.quad 34359738368
+.quad 68719476736
+.quad 137438953472
+.quad 274877906944
+.quad 549755813888
+.quad 1099511627776
+.quad 2199023255552
+.quad 4398046511104
+.quad 8796093022208
+.quad 17592186044416
+.quad 35184372088832
+.quad 70368744177664
+.quad 140737488355328
+.quad 281474976710656
+.quad 562949953421312
+.quad 1125899906842624
+.quad 2251799813685248
+.quad 4503599627370496
+.quad 9007199254740992
+.quad 18014398509481984
+.quad 36028797018963968
+.quad 72057594037927936
+.quad 144115188075855872
+.quad 288230376151711744
+.quad 576460752303423488
+.quad 1152921504606846976
+.quad 2305843009213693952
+.quad 4611686018427387904
+#64bit_bitmask:
+.quad 9223372036854775808
